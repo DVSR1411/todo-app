@@ -1,13 +1,13 @@
 pipeline {
     agent any
     tools {
-      dockerTool 'docker'
-      jdk 'JAVA_HOME'
-      maven 'M2_HOME'
       git 'Default'
+      jdk 'Java'
+      maven 'Maven'
+      dockerTool 'Docker'
     }
     stages {
-        stage('Git Clone') {
+        stage('Git checkout') {
             steps {
                 git 'https://github.com/DVSR1411/todo-app.git'
             }
@@ -17,24 +17,28 @@ pipeline {
                 sh 'mvn clean install package'
             }
         }
-        stage('Docker build') {
+        stage('Docker build and push') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker', passwordVariable: 'passwd', usernameVariable: 'uname')]) {
-                    sh 'docker login -u $uname -p $passwd'
-                    sh 'docker build -t $uname/todo-app:v1 .'
-                }
-            }
-        }
-        stage('Docker push') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'docker', passwordVariable: 'passwd', usernameVariable: 'uname')]) {
-                    sh 'docker push $uname/todo-app:v1'
-                }
+                sh '''
+                aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $DOCKER_URL
+                docker build -t $DOCKER_REPO .
+                docker tag $DOCKER_REPO:$DOCKER_TAG $DOCKER_URL/$DOCKER_REPO:$DOCKER_TAG
+                docker push $DOCKER_URL/$DOCKER_REPO:$DOCKER_TAG
+                '''
             }
         }
         stage('Kubernetes deploy') {
             steps {
-                sh 'kubectl apply -f manifests/.'
+                sh '''
+                sed -i "s#dvsr1411/todo-app:v1#$DOCKER_URL/$DOCKER_REPO:$DOCKER_TAG#g" manifests/tomcat.yml
+                CREDENTIALS=$(aws sts assume-role --role-arn $KUBECTL_ROLE --role-session-name ec2-kubectl --duration-seconds 900)
+                export AWS_ACCESS_KEY_ID="$(echo ${CREDENTIALS} | jq -r '.Credentials.AccessKeyId')"
+                export AWS_SECRET_ACCESS_KEY="$(echo ${CREDENTIALS} | jq -r '.Credentials.SecretAccessKey')"
+                export AWS_SESSION_TOKEN="$(echo ${CREDENTIALS} | jq -r '.Credentials.SessionToken')"
+                export AWS_EXPIRATION=$(echo ${CREDENTIALS} | jq -r '.Credentials.Expiration')
+                aws eks update-kubeconfig --name $EKS_CLUSTER --region $REGION
+                kubectl apply -f manifests/.
+                '''
             }
         }
     }
