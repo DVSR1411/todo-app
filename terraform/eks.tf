@@ -38,20 +38,22 @@ module "eks" {
     }
   }
   cluster_endpoint_public_access           = true
+  cluster_endpoint_private_access          = false
   enable_cluster_creator_admin_permissions = true
+  vpc_id                                   = data.aws_vpc.default.id
   subnet_ids                               = data.aws_subnets.selected.ids
   control_plane_subnet_ids                 = data.aws_subnets.selected.ids
   authentication_mode                      = "API_AND_CONFIG_MAP"
   eks_managed_node_groups = {
-    demo-ng = {
-      ami_type             = "AL2023_x86_64_STANDARD"
-      instance_types       = ["t2.small"]
-      capacity_type        = "SPOT"
+    test-ng = {
+      ami_type               = "AL2023_x86_64_STANDARD"
+      instance_types         = ["t2.small"]
+      capacity_type          = "SPOT"
       vpc_security_group_ids = [aws_security_group.eks_sg.id]
-      min_size             = 1
-      max_size             = 3
-      desired_size         = 2
-      force_update_version = false
+      min_size               = 1
+      max_size               = 3
+      desired_size           = 2
+      force_update_version   = false
       update_config = {
         max_unavailable_percentage = 25
       }
